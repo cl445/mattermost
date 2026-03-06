@@ -1,0 +1,28 @@
+# Build context for Dockerfile.openid.
+#
+# The repository's .git directory alone is well over a gigabyte, so the context is
+# trimmed to what the server and webapp builds actually read. BUILD_HASH is passed
+# to the build as an argument instead of being derived from .git.
+
+.git
+.github
+.gitpod.yml
+.claude
+.cursor
+.playwright-mcp
+
+# Build outputs — regenerated inside the image, and stale local copies would be
+# copied over the freshly built ones.
+**/node_modules
+**/dist
+server/bin
+server/dist
+webapp/channels/dist
+
+# Not read by either build stage
+e2e-tests
+docs
+api
+CHANGELOG.md
+CONTRIBUTING.md
+SECURITY.md

@@ -379,9 +379,10 @@ func GenerateLimitedClientConfig(c *model.Config, telemetryID string, license *m
 	props["SamlLoginButtonTextColor"] = ""
 	props["EnableSignUpWithGoogle"] = "false"
 	props["EnableSignUpWithOffice365"] = "false"
-	props["EnableSignUpWithOpenId"] = "false"
-	props["OpenIdButtonText"] = ""
-	props["OpenIdButtonColor"] = ""
+	// OpenID Connect - enabled without license check for self-hosted SSO (e.g. Keycloak)
+	props["EnableSignUpWithOpenId"] = strconv.FormatBool(*c.OpenIdSettings.Enable)
+	props["OpenIdButtonText"] = *c.OpenIdSettings.ButtonText
+	props["OpenIdButtonColor"] = *c.OpenIdSettings.ButtonColor
 	props["CWSURL"] = ""
 	props["EnableCustomBrand"] = strconv.FormatBool(*c.TeamSettings.EnableCustomBrand)
 	props["CustomBrandText"] = *c.TeamSettings.CustomBrandText
@@ -433,10 +434,9 @@ func GenerateLimitedClientConfig(c *model.Config, telemetryID string, license *m
 			props["EnableSignUpWithOffice365"] = strconv.FormatBool(*c.Office365Settings.Enable)
 		}
 
+		// OpenID is now enabled without license check (see above)
+		// GitLab settings still require OpenId license feature
 		if *license.Features.OpenId {
-			props["EnableSignUpWithOpenId"] = strconv.FormatBool(*c.OpenIdSettings.Enable)
-			props["OpenIdButtonColor"] = *c.OpenIdSettings.ButtonColor
-			props["OpenIdButtonText"] = *c.OpenIdSettings.ButtonText
 			props["EnableSignUpWithGitLab"] = strconv.FormatBool(*c.GitLabSettings.Enable)
 			props["GitLabButtonColor"] = *c.GitLabSettings.ButtonColor
 			props["GitLabButtonText"] = *c.GitLabSettings.ButtonText

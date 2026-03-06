@@ -1,0 +1,134 @@
+# Docker Compose for Mattermost with OpenID Connect (Keycloak) support
+#
+# Usage:
+#   1. Copy the settings template:  cp .env.openid.example .env
+#   2. Fill in the values in .env (client secret, discovery endpoint, passwords)
+#   3. Build the image:             docker compose -f docker-compose.openid.yml build
+#   4. Start services:              docker compose -f docker-compose.openid.yml up -d
+#
+# The build context is the repository root, so the image is built from this working
+# tree. Nothing is fetched from GitHub.
+#
+# To bring up a throwaway Keycloak alongside Mattermost for local testing, add
+# `--profile keycloak`. Point MM_OPENID_DISCOVERY_ENDPOINT at your own Keycloak
+# instead for anything beyond that; see the notes at the end of this file.
+
+services:
+  mattermost:
+    build:
+      context: .
+      dockerfile: Dockerfile.openid
+      args:
+        BUILD_HASH: ${BUILD_HASH:-unknown}
+    image: mattermost-openid:latest
+    restart: unless-stopped
+    ports:
+      - "8065:8065"
+    environment:
+      # Database
+      - MM_SQLSETTINGS_DRIVERNAME=postgres
+      - MM_SQLSETTINGS_DATASOURCE=postgres://mattermost:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/mattermost?sslmode=disable
+
+      # Site URL - IMPORTANT: Set this to your actual URL
+      - MM_SERVICESETTINGS_SITEURL=${MM_SITE_URL:-http://localhost:8065}
+
+      # =======================================================================
+      # OpenID Connect / Keycloak Configuration
+      # =======================================================================
+      # Enable OpenID Connect
+      - MM_OPENIDSETTINGS_ENABLE=true
+
+      # Keycloak Client ID (create in Keycloak Admin Console)
+      - MM_OPENIDSETTINGS_ID=${MM_OPENID_CLIENT_ID:?set MM_OPENID_CLIENT_ID in .env}
+
+      # Keycloak Client Secret
+      - MM_OPENIDSETTINGS_SECRET=${MM_OPENID_CLIENT_SECRET:?set MM_OPENID_CLIENT_SECRET in .env}
+
+      # Keycloak Discovery Endpoint
+      # Format: https://<keycloak-host>/realms/<realm>/.well-known/openid-configuration
+      # The authorization, token and userinfo endpoints are resolved from this
+      # document at runtime, so they do not have to be configured separately.
+      - MM_OPENIDSETTINGS_DISCOVERYENDPOINT=${MM_OPENID_DISCOVERY_ENDPOINT:?set MM_OPENID_DISCOVERY_ENDPOINT in .env}
+
+      # The IdP only issues an ID token — and Mattermost only verifies one — when
+      # the "openid" scope is requested. Keep it in this list.
+      - MM_OPENIDSETTINGS_SCOPE=profile openid email
+
+      # Button appearance
+      - MM_OPENIDSETTINGS_BUTTONTEXT=${MM_OPENID_BUTTON_TEXT:-Login mit Keycloak}
+      - MM_OPENIDSETTINGS_BUTTONCOLOR=${MM_OPENID_BUTTON_COLOR:-#0052CC}
+
+      # =======================================================================
+
+    volumes:
+      - mattermost_data:/mattermost/data
+      - mattermost_logs:/mattermost/logs
+      - mattermost_config:/mattermost/config
+      - mattermost_plugins:/mattermost/plugins
+      - mattermost_client_plugins:/mattermost/client/plugins
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=mattermost
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      - POSTGRES_DB=mattermost
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "mattermost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional local Keycloak for testing, started only with `--profile keycloak`.
+  # Runs in dev mode (no TLS, H2 storage) — not suitable for production.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    profiles: ["keycloak"]
+    restart: unless-stopped
+    command: ["start-dev", "--http-port=8080"]
+    environment:
+      - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN_USER:-admin}
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports:
+      - "8080:8080"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+
+volumes:
+  mattermost_data:
+  mattermost_logs:
+  mattermost_config:
+  mattermost_plugins:
+  mattermost_client_plugins:
+  postgres_data:
+  keycloak_data:
+
+# =============================================================================
+# Keycloak Configuration Instructions
+# =============================================================================
+#
+# 1. In Keycloak Admin Console, create a new Client:
+#    - Client ID: mattermost
+#    - Client Protocol: openid-connect
+#    - Access Type: confidential
+#    - Valid Redirect URIs:
+#        https://your-mattermost-url/signup/openid/complete
+#        https://your-mattermost-url/login/openid/complete
+#    - Web Origins: https://your-mattermost-url
+#
+# 2. After saving, go to "Credentials" tab and copy the Secret
+#
+# 3. Put that secret into .env as MM_OPENID_CLIENT_SECRET
+#
+# 4. Set MM_OPENID_DISCOVERY_ENDPOINT in .env to your Keycloak realm's
+#    .well-known/openid-configuration URL
+#
+# 5. Set MM_SITE_URL in .env to your Mattermost URL
+#
+# =============================================================================
